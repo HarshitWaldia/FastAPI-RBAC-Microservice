@@ -72,6 +72,12 @@ def create_product(db: Session, product: schemas.ProductBase, seller_id: int = N
     # If an explicit seller_id is provided by the server-side caller, use it
     if seller_id is not None:
         product_data["seller_id"] = seller_id
+    
+    # Validate if category exists
+    category = db.query(models.Category).filter(models.Category.id == product.category_id).first()
+    if not category:
+        raise ValueError(f"Category with id {product.category_id} not found")
+        
     db_product = models.Product(**product_data)
     db.add(db_product)
     db.commit()

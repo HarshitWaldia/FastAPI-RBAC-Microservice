@@ -246,14 +246,18 @@ def create_product(product: schemas.ProductBase, db: Session = Depends(get_db), 
     Only sellers or admins can create products.
     - If the caller is a seller, the product will be assigned to that seller (seller_id forced).
     - If the caller is an admin, they may optionally include a seller_id in the request to assign the product; otherwise seller_id will be None.
+    - A valid category_id must be provided.
     """
     if current_user.role == "seller":
         seller_id = current_user.id
     else:
         # admin: allow admin to optionally set seller_id in request body
         seller_id = product.seller_id if getattr(product, "seller_id", None) is not None else None
-
-    return crud.create_product(db, product=product, seller_id=seller_id)
+        
+    try:
+        return crud.create_product(db, product=product, seller_id=seller_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 # SELLER PRODUCT ENDPOINTS
 @app.get("/seller/products/", response_model=List[schemas.Product], tags=["Seller Products"], summary="Get seller products")

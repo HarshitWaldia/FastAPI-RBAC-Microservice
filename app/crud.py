@@ -65,8 +65,12 @@ def get_product(db: Session, product_id: int) -> Optional[models.Product]:
     return db.query(models.Product).filter(models.Product.id == product_id).first()
 
 def create_product(db: Session, product: schemas.ProductBase, seller_id: int = None) -> models.Product:
+    # Prevent client-provided seller_id from being trusted. Start from product dict
     product_data = product.dict()
-    if seller_id:
+    # Remove any seller_id supplied by client to avoid privilege escalation
+    product_data.pop("seller_id", None)
+    # If an explicit seller_id is provided by the server-side caller, use it
+    if seller_id is not None:
         product_data["seller_id"] = seller_id
     db_product = models.Product(**product_data)
     db.add(db_product)
@@ -118,6 +122,13 @@ def create_cart(db: Session, user_id: int) -> models.Cart:
     return cart
 
 def add_cart_item(db: Session, cart_id: int, item: schemas.CartItemBase) -> models.CartItem:
+    product = db.query(models.Product).filter(models.Product.id == item.product_id).first()
+    if not product:
+        raise ValueError("Product not found")
+
+    if product.stock is not None and item.quantity > product.stock:
+        raise ValueError("Insufficient stock")
+
     db_item = models.CartItem(cart_id=cart_id, **item.dict())
     db.add(db_item)
     db.commit()
@@ -134,10 +145,16 @@ def update_cart_item(db: Session, cart_item_id: int, quantity: int) -> models.Ca
 
 def remove_cart_item(db: Session, cart_item_id: int) -> Optional[models.CartItem]:
     item = db.query(models.CartItem).filter(models.CartItem.id == cart_item_id).first()
-    if item:
-        db.delete(item)
-        db.commit()
-    return item
+    # if item:
+    #     db.delete(item)
+    #     db.commit()
+    # return item
+    if not item:
+        return False
+    db.delete(item)
+    db.commit()
+    return True
+
 
 # ORDER CRUD
 def create_order(db: Session, order: schemas.OrderBase, user_id: int, items: List[schemas.OrderItemBase]) -> models.Order:
@@ -191,6 +208,16 @@ def create_order_from_cart_for_user(db: Session, user_id: int) -> models.Order:
     db.commit()
     db.refresh(order)
 
+    # Clear the cart items now that the order has been placed
+    for item in cart_items:
+        # If cart items have relationships, remove them safely
+        try:
+            db.delete(item)
+        except Exception:
+            # fallback: ignore deletion error and continue
+            pass
+    db.commit()
+
     return order
 
 # CATEGORY CRUD
@@ -236,8 +263,11 @@ def create_address(db: Session, user_id: int, address: schemas.AddressCreate):
 def get_addresses(db: Session, user_id: int):
     return db.query(models.Address).filter(models.Address.user_id == user_id).all()
 
-def get_address(db: Session, user_id: int):
-    return db.query(models.Address).filter(models.Address.id == user_id).first()
+def get_address(db: Session, address_id: int):
+    return db.query(models.Address).filter(models.Address.id == address_id).first()
+
+def get_address_by_user(db: Session, user_id: int):
+    return db.query(models.Address).filter(models.Address.user_id == user_id).first()
 
 def update_address(db: Session, db_address: models.Address, update: schemas.AddressUpdate):
     for key, value in update.dict(exclude_unset=True).items():

@@ -12,6 +12,11 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
 
+
+class AdminCreate(UserCreate):
+    """Schema for creating an admin user. Includes a server-side secret to authorize admin creation."""
+    admin_secret: str
+
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
